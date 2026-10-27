@@ -1,14 +1,16 @@
 // ============================================================
 // LeanTrace 端到端测试：真实 workerd 运行时 + 本地 D1
 //
-// 运行: node scripts/e2e.mjs   （要求 Node >= 20，Windows/Linux 均可）
+// 运行: npm run e2e   （要求 Node >= 23.6，Windows/Linux 均可）
 //
 // 自动完成：
-//   1. wrangler d1 execute --local 初始化本地 D1
+//   0. .dev.vars 不存在时自举仅测试用的 TOKEN_SECRET（CI/全新 clone 开箱即跑）
+//   1. 【故意不建库】从空 D1 启动，验证版本化自动迁移
 //   2. 后台启动 wrangler dev (127.0.0.1:8787)
 //   3. 用真实 HTTP 请求走完埋点全流程后杀掉进程树
 // ============================================================
 import { execSync, spawn } from 'node:child_process';
+import { existsSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -59,15 +61,22 @@ function verifySchemaVersion() {
   }
 }
 
+// ---- 0) .dev.vars 自举：CI/全新 clone 下不存在时生成仅测试用的密钥 ----
+//（.gitignore 已忽略 .dev.vars；存在则不覆盖，尊重本地配置）
+if (!existsSync(join(ROOT, '.dev.vars'))) {
+  writeFileSync(join(ROOT, '.dev.vars'), 'TOKEN_SECRET=e2e-test-only-secret-0123456789\n');
+  console.log('  未找到 .dev.vars，已生成仅测试用密钥');
+}
+
 // ---- 1) 【故意不初始化本地 D1】从空库启动，验证惰性自动迁移 ----
 //（生产部署同样免手动 initSql，见 src/lib/migrate.ts）
 console.log('== 跳过手动建库，从空 D1 启动（验证版本化自动迁移） ==');
-// ---- 2) 启动 wrangler dev ----
+// ---- 2) 启动 wrangler dev（直接调 node + wrangler bin，避免 npx/shell）----
 console.log('\n== 启动 wrangler dev ==');
 let devLog = '';
-child = spawn('npx', ['wrangler', 'dev', '--port', '8787'], {
+const wranglerBin = join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+child = spawn(process.execPath, [wranglerBin, 'dev', '--port', '8787'], {
   cwd: ROOT,
-  shell: true,
   env: { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' },
 });
 child.stdout.on('data', (d) => (devLog += d));
