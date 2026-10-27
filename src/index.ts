@@ -43,6 +43,8 @@ import {
 import { resolveStatTarget } from './lib/paths';
 import { withSchemaRetry } from './lib/migrate';
 import { normalizeHostname, normalizePath, parseReferrer } from './lib/validate';
+import { DASHBOARD_HTML } from './pages/dashboard';
+import { BEACON_SCRIPT as beaconScript } from './pages/beacon';
 
 interface Bindings {
   DB: D1Database;
@@ -82,7 +84,16 @@ function parseStatus(raw: unknown): number {
 
 const app = new Hono<{ Bindings: Bindings }>();
 
-app.get('/', (c) => c.text('LeanTrace analytics is running'));
+// 根路径：自演示页（页面自身被统计，实时显示本页 PV/UV；含接入配置检测）
+app.get('/', (c) => c.html(DASHBOARD_HTML));
+
+// 直供埋点脚本：用户无需自托管即可接入（引用方式见根页面）
+app.get('/js/index.min.js', (c) =>
+  c.body(beaconScript, 200, {
+    'content-type': 'application/javascript; charset=utf-8',
+    'cache-control': 'public, max-age=86400',
+  }),
+);
 app.use('/api/*', cors());
 
 /**

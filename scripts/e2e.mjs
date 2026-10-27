@@ -240,6 +240,29 @@ res = await fetch(BASE + '/api/stats?hostname=blog.example.com');
 s = await res.json();
 check('站点总量仍不受 404 影响（pv=5）', s.data.pv === 5, JSON.stringify(s));
 
+// --- 根路径自演示页与直供埋点脚本 ---
+res = await fetch(BASE + '/');
+const homeHtml = await res.text();
+check(
+  '根路径为自演示页（含实时计数元素与脚本引用）',
+  res.status === 200 &&
+    (res.headers.get('content-type') || '').includes('text/html') &&
+    homeHtml.includes('id="page_pv"') &&
+    homeHtml.includes('/js/index.min.js') &&
+    homeHtml.includes('check-url'),
+  res.headers.get('content-type') + '',
+);
+res = await fetch(BASE + '/js/index.min.js');
+const beaconBody = await res.text();
+check(
+  'Worker 直供埋点脚本（/js/index.min.js）',
+  res.status === 200 &&
+    (res.headers.get('content-type') || '').includes('javascript') &&
+    beaconBody.includes('leantrace_token') &&
+    beaconBody.includes('/api/visit'),
+  res.headers.get('content-type') + '',
+);
+
 // 停服后终验版本表，再汇总退出
 verifySchemaVersion();
 cleanup(failed === 0 ? 0 : 1);

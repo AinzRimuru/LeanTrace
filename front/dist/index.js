@@ -25,6 +25,11 @@
 
   var currentScript = document.currentScript;
   var baseUrl = (currentScript && currentScript.getAttribute('data-base-url')) || '';
+  // 回退：缺 data-base-url 时用脚本自身 src 的 origin（直引实例脚本可零配置接入；
+  // 绝不回退到任何硬编码第三方地址）
+  if (!baseUrl && currentScript && currentScript.src) {
+    try { baseUrl = new URL(currentScript.src, location.href).origin; } catch (e) { /* ignore */ }
+  }
   var pvElementId = (currentScript && currentScript.getAttribute('data-page-pv-id')) || 'page_pv';
   var uvElementId = (currentScript && currentScript.getAttribute('data-page-uv-id')) || 'page_uv';
 

@@ -21,7 +21,8 @@ VISITOR_RETENTION_DAYS = "90"
 # t_page_stat 行数严格有界；404/5xx 始终单独走哨兵行不占此额度
 MAX_PAGES_PER_SITE = "5000"
 
-# schema.sql 以文本模块打进 Worker（惰性自动迁移用，见 src/lib/migrate.ts）
+# schema.sql 以文本模块打进 Worker（惰性自动迁移，见 src/lib/migrate.ts）
+# 埋点脚本经 src/pages/beacon.ts 内联直供（改 front/dist 后同步，冒烟有一致性守卫）
 [[rules]]
 type = "Text"
 globs = ["**/*.sql"]

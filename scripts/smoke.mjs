@@ -479,6 +479,14 @@ section('P1: 计数器并发自增语义（原子性）');
 }
 
 // ------------------------------------------------------------
+section('P6: 直供埋点脚本一致性守卫');
+{
+  const beaconMod = await import(pathToFileURL(join(ROOT, 'src/pages/beacon.ts')).href);
+  const dist = readFileSync(join(ROOT, 'front/dist/index.min.js'), 'utf8').trimEnd();
+  check('beacon.ts 与 front/dist/index.min.js 逐字节一致（改埋点后需同步）', beaconMod.BEACON_SCRIPT === dist);
+}
+
+// ------------------------------------------------------------
 section('P5: 版本化迁移（t_schema_version，部署免手动 initSql）');
 {
   // ==== 与 src/lib/migrate.ts 逐句镜像 ====

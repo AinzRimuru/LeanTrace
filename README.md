@@ -12,7 +12,7 @@ LeanTrace 在博客页面展示「本页访问人次（PV）/ 本页访问人数
 
 ## 特性
 
-- **一行脚本接入** —— 任意静态博客（Hugo / Hexo / Astro / 纯 HTML），两个标签展示 PV/UV
+- **一行脚本接入** —— 可直接引用实例自带的 `/js/index.min.js`（无需自托管脚本），两个标签展示 PV/UV；根路径即在线演示与配置检测页
 - **换 IP 不丢身份** —— 访客身份是浏览器持有的签名 token（JWT 风格 HMAC + Bloom 页面指纹），不再是 IP：NAT 下的多个人不再被算成一个人，换网络刷新不再变成新访客
 - **明文 IP 不落库** —— 计数与访问明细里没有 IP；仅防滥用限额表临时保存 90 天
 - **防刷** —— token 一次性版本号防重放，同 IP 每小时最多产生 1 个新访客 ID（刷量成本被压到 ≤ 1 UV/小时/IP）
@@ -38,18 +38,24 @@ npm run deploy
 
 ### 2. 接入博客
 
-把 [`front/dist/index.min.js`](front/dist/index.min.js) 放进你博客的静态目录（或任意静态托管），在 `</body>` 前引入：
+部署后访问 Worker 域名（根路径）即可看到**自演示页**：接入代码片段、本页实时 PV/UV、以及接入配置检测（纯浏览器端执行）。接入博客只需：
 
 ```html
-<script defer src="/leantrace/index.min.js"
-        data-base-url="https://leantrace.your-name.workers.dev"></script>
+<script defer src="https://leantrace.your-name.workers.dev/js/index.min.js"></script>
 
 本页访问人次: <span id="page_pv"></span>
 本页访问人数: <span id="page_uv"></span>
 ```
 
+也可以把 [`front/dist/index.min.js`](front/dist/index.min.js) 放进自己博客的静态目录自行托管，引用时加上 `data-base-url`：
+
+```html
+<script defer src="/leantrace/index.min.js"
+        data-base-url="https://leantrace.your-name.workers.dev"></script>
+```
+
 > [!WARNING]
-> `data-base-url` 必填、结尾不带 `/`。缺少该配置时脚本静默跳过 —— LeanTrace 永远不会把数据发往第三方默认地址。
+> 直引实例脚本时无需 `data-base-url`（同源自动指向本实例）；自托管时必填且结尾不带 `/`。缺少时脚本静默跳过 —— LeanTrace 永远不会把数据发往第三方默认地址。
 
 **前端参数**
 
