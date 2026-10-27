@@ -31,7 +31,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      # 仅当 Token 可访问多个账号时需要；单账号 Token 可不配置
+      # 可选：显式指定账号 ID（Token 可访问多个账号、或缺少 Memberships:Read 权限时）。
+      # 未配置时下方步骤会自动通过 /accounts 解析（单账号）。
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v4
@@ -41,13 +42,44 @@ jobs:
           cache: npm
       - run: npm ci
 
+      # 所有 wrangler/CF 输出统一脱敏：邮箱 -> ***@***，32 位 hex（账号/库/部署 ID）-> <hex-hidden>
+      - name: 解析账号 ID（不回显任何账号信息）
+        run: |
+          if [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "使用 Secrets 中的 CLOUDFLARE_ACCOUNT_ID"
+            exit 0
+          fi
+          RESOLVED=$(curl -sf -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            https://api.cloudflare.com/client/v4/accounts \
+            | jq -r 'if (.result | length) == 1 then .result[0].id else empty end')
+          if [ -n "$RESOLVED" ]; then
+            echo "::add-mask::$RESOLVED"
+            echo "CLOUDFLARE_ACCOUNT_ID=$RESOLVED" >> "$GITHUB_ENV"
+            echo "已自动解析 Account ID（单账号，已对日志全局掩码）"
+          else
+            echo "::warning::无法自动解析 Account ID（多账号或 Token 无法访问 /accounts）。请在 Secrets 配置 CLOUDFLARE_ACCOUNT_ID"
+          fi
+
       - name: 解析或创建 D1 数据库（自动落 database_id，无需手改 wrangler.toml）
         run: |
-          DB_ID=$(npx wrangler d1 info leantrace --json 2>/dev/null | jq -r '.uuid // empty' || true)
+          redact() {
+            sed -E -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/***@***/g' \
+                   -e 's/\b[0-9a-f]{32}\b/<hex-hidden>/g'
+          }
+          db_info() {
+            npx wrangler d1 info leantrace --json 2>/dev/null | jq -r '.uuid // empty' 2>/dev/null || true
+          }
+          DB_ID=$(db_info)
           if [ -z "$DB_ID" ]; then
             echo "D1 数据库 leantrace 不存在，创建中..."
-            npx wrangler d1 create leantrace
-            DB_ID=$(npx wrangler d1 info leantrace --json | jq -r '.uuid // empty')
+            if ! CREATE_OUT=$(npx wrangler d1 create leantrace 2>&1); then
+              printf '%s\n' "$CREATE_OUT" | redact
+              if printf '%s' "$CREATE_OUT" | grep -qiE 'memberships|code: 10000'; then
+                echo "::error::Token 无法解析账号（/memberships 鉴权失败）。任选其一：① Secrets 添加 CLOUDFLARE_ACCOUNT_ID；② 给 Token 增加 User·Memberships·Read 权限"
+              fi
+              exit 1
+            fi
+            DB_ID=$(db_info)
           fi
           if [ -z "$DB_ID" ]; then
             echo "::error::无法获得 database_id（检查 CLOUDFLARE_API_TOKEN 是否具备 D1:Edit 权限）"
@@ -58,14 +90,32 @@ jobs:
           echo "database_id 已解析（幂等：已存在的库直接复用）"
 
       - name: 部署
-        run: npx wrangler deploy
+        run: |
+          redact() {
+            sed -E -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/***@***/g' \
+                   -e 's/\b[0-9a-f]{32}\b/<hex-hidden>/g'
+          }
+          if OUT=$(npx wrangler deploy 2>&1); then
+            printf '%s\n' "$OUT" | redact
+          else
+            printf '%s\n' "$OUT" | redact
+            exit 1
+          fi
 
       - name: 同步 TOKEN_SECRET
         env:
           TOKEN_SECRET: ${{ secrets.TOKEN_SECRET }}
         run: |
-          if [ -n "$TOKEN_SECRET" ]; then
-            printf '%s' "$TOKEN_SECRET" | npx wrangler secret put TOKEN_SECRET
-          else
+          redact() {
+            sed -E -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/***@***/g' \
+                   -e 's/\b[0-9a-f]{32}\b/<hex-hidden>/g'
+          }
+          if [ -z "$TOKEN_SECRET" ]; then
             echo "::warning::未配置 TOKEN_SECRET secret，Worker 将拒绝计数请求（503）"
+            exit 0
           fi
+          if ! OUT=$(printf '%s' "$TOKEN_SECRET" | npx wrangler secret put TOKEN_SECRET 2>&1); then
+            printf '%s\n' "$OUT" | redact
+            exit 1
+          fi
+          printf '%s\n' "$OUT" | redact
