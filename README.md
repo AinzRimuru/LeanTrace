@@ -6,6 +6,7 @@
 ![D1](https://img.shields.io/badge/D1-SQLite-0051C3?logo=cloudflare&logoColor=white)
 ![Hono](https://img.shields.io/badge/Hono-4.x-E36002)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
+[![CI & Deploy](https://github.com/AinzRimuru/LeanTrace/actions/workflows/deploy.yml/badge.svg)](https://github.com/AinzRimuru/LeanTrace/actions/workflows/deploy.yml)
 
 LeanTrace 在博客页面展示「本页访问人次（PV）/ 本页访问人数（UV）」。它是对 webviso 类统计服务的现代化重写，解决此类方案的三个结构性问题：全表扫描、明文 IP 无限膨胀、把 IP 当作用户身份。
 
@@ -33,6 +34,7 @@ npm run deploy
 
 > [!NOTE]
 > 不需要手动建表。数据库结构在首次请求时自动创建（版本化迁移）。
+> 走 [自动部署](#自动部署) 时可跳过本节，直接把仓库推上去。
 
 ### 2. 接入博客
 
@@ -100,6 +102,17 @@ GET /api/stats?hostname=blog.example.com&url=/__lt_404__   全站 404 汇总
 | `VISITOR_RETENTION_DAYS` | `[vars]` | `90` | 防滥用状态表保留天数（按最近活跃计） |
 | `MAX_PAGES_PER_SITE` | `[vars]` | `5000` | 每站页面计数行上限，超出后新路径计入溢出哨兵行 |
 
+## 自动部署
+
+推送到 `main` 即自动部署（GitHub Actions，[deploy.yml](.github/workflows/deploy.yml)）：先跑全部测试（typecheck / 冒烟 / 端到端），通过后部署到 Cloudflare Workers；**首次运行会自动创建 D1 数据库并解析 `database_id`**，无需手改 `wrangler.toml`。PR 只跑测试不部署。
+
+在仓库 Settings → Secrets and variables → Actions 添加：
+
+| Secret | 必需 | 说明 |
+|---|---|---|
+| `CLOUDFLARE_API_TOKEN` | ✓ | 权限：Account · Workers Scripts · **Edit** + Account · D1 · **Edit** |
+| `TOKEN_SECRET` | 建议 | Worker 签名密钥（≥16 随机字符），每次部署自动同步到 Worker |
+| `CLOUDFLARE_ACCOUNT_ID` | 多账号时 | 仅当 Token 可访问多个账号时需要 |
 ## 数据与隐私
 
 | 数据 | 存储位置 | 保留期 |
@@ -136,6 +149,7 @@ src/lib/migrate.ts  # 版本化自动迁移
 src/lib/validate.ts # 入参规范化与防御
 front/dist/         # 埋点脚本（可读版 + 压缩版）
 schema.sql          # 最新表结构（幂等）
+.github/workflows/  # CI 与自动部署
 scripts/            # 冒烟 / 端到端测试
 ```
 

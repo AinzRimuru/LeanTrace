@@ -1,0 +1,71 @@
+name: CI & Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: 测试（typecheck / 冒烟 / 端到端）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run smoke
+      - run: npm run e2e
+
+  deploy:
+    name: 部署到 Cloudflare Workers
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      # 仅当 Token 可访问多个账号时需要；单账号 Token 可不配置
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      - name: 解析或创建 D1 数据库（自动落 database_id，无需手改 wrangler.toml）
+        run: |
+          DB_ID=$(npx wrangler d1 info leantrace --json 2>/dev/null | jq -r '.uuid // empty' || true)
+          if [ -z "$DB_ID" ]; then
+            echo "D1 数据库 leantrace 不存在，创建中..."
+            npx wrangler d1 create leantrace
+            DB_ID=$(npx wrangler d1 info leantrace --json | jq -r '.uuid // empty')
+          fi
+          if [ -z "$DB_ID" ]; then
+            echo "::error::无法获得 database_id（检查 CLOUDFLARE_API_TOKEN 是否具备 D1:Edit 权限）"
+            exit 1
+          fi
+          sed -i "s|<unique-ID-for-your-database>|$DB_ID|g" wrangler.toml
+          grep -q "$DB_ID" wrangler.toml || { echo "::error::wrangler.toml 占位符替换失败"; exit 1; }
+          echo "database_id 已解析（幂等：已存在的库直接复用）"
+
+      - name: 部署
+        run: npx wrangler deploy
+
+      - name: 同步 TOKEN_SECRET
+        env:
+          TOKEN_SECRET: ${{ secrets.TOKEN_SECRET }}
+        run: |
+          if [ -n "$TOKEN_SECRET" ]; then
+            printf '%s' "$TOKEN_SECRET" | npx wrangler secret put TOKEN_SECRET
+          else
+            echo "::warning::未配置 TOKEN_SECRET secret，Worker 将拒绝计数请求（503）"
+          fi
