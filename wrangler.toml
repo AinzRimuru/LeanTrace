@@ -1,0 +1,32 @@
+name = "leantrace"
+main = "src/index.ts"
+compatibility_date = "2024-06-14"
+
+# D1 数据库：执行 `npx wrangler d1 create leantrace` 后，把返回的 database_id 填到下面
+[[d1_databases]]
+binding = "DB" # available in your Worker on env.DB
+database_name = "leantrace"
+database_id = "<unique-ID-for-your-database>"
+
+# 每日 UTC 03:17 清理过期明细与不活跃访客状态（scheduled handler，见 src/index.ts）
+[triggers]
+crons = ["17 3 * * *"]
+
+[vars]
+# t_visit_log 保留天数（行数 ≈ 保留天数 x 日均 PV，天然有界）
+LOG_RETENTION_DAYS = "90"
+# t_visitor_state（防重放/IP 限额状态表）保留天数，按 update_at 清理长期不活跃访客
+VISITOR_RETENTION_DAYS = "90"
+# 每站页面计数行上限：超出后新路径（含刷路径/SPA catch-all）计入溢出哨兵行，
+# t_page_stat 行数严格有界；404/5xx 始终单独走哨兵行不占此额度
+MAX_PAGES_PER_SITE = "5000"
+
+# schema.sql 以文本模块打进 Worker（惰性自动迁移用，见 src/lib/migrate.ts）
+[[rules]]
+type = "Text"
+globs = ["**/*.sql"]
+
+
+# TOKEN_SECRET 是签名密钥（>=16 随机字符），不要写在本文件：
+#   本地开发 -> .dev.vars（参考 .dev.vars.example，已被 .gitignore 排除）
+#   线上     -> npx wrangler secret put TOKEN_SECRET

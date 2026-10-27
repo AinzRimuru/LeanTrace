@@ -1,0 +1,24 @@
+{
+  "name": "leantrace",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "轻量博客访问统计：Cloudflare Workers + Hono + D1，无状态访客 token（JWT 风格 HMAC + Bloom 页面指纹）",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node scripts/smoke.mjs",
+    "e2e": "node scripts/e2e.mjs",
+    "initSqlLocal": "wrangler d1 execute leantrace --local --file=./schema.sql",
+    "initSql": "wrangler d1 execute leantrace --remote --file=./schema.sql"
+  },
+  "dependencies": {
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241022.0",
+    "typescript": "^5.6.0",
+    "wrangler": "^3.80.0"
+  }
+}
