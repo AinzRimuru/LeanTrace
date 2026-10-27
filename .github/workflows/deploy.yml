@@ -84,33 +84,32 @@ jobs:
 
       # 所有 wrangler/CF 输出统一脱敏：邮箱 -> ***@***，32 位 hex（账号/库/部署 ID）-> <hex-hidden>
       # 邮箱正则要求域名含点 + 字母 TLD，避免误伤 "wrangler@4" 这类包名@版本
+      # D1 查询/创建走文档化稳定的 REST API（预检已验证可达），不依赖 wrangler 子命令的 --json 输出形状
       - name: 解析或创建 D1 数据库（自动落 database_id，无需手改 wrangler.toml）
         run: |
           redact() {
             sed -E -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/***@***/g' \
                    -e 's/\b[0-9a-f]{32}\b/<hex-hidden>/g'
           }
-          db_info() {
-            npx wrangler d1 info leantrace --json 2>/dev/null | jq -r '.uuid // empty' 2>/dev/null || true
+          API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database"
+          list_db() {
+            curl -sf -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$API?per_page=100" \
+              | jq -r '[.result[] | select(.name == "leantrace") | .uuid][0] // empty'
           }
-          DB_ID=$(db_info)
+          DB_ID=$(list_db)
           if [ -z "$DB_ID" ]; then
             echo "D1 数据库 leantrace 不存在，创建中..."
-            if ! CREATE_OUT=$(npx wrangler d1 create leantrace 2>&1); then
-              printf '%s\n' "$CREATE_OUT" | redact
-              if printf '%s' "$CREATE_OUT" | grep -q '/memberships'; then
-                echo "::error::账号解析失败：Secrets 配置 CLOUDFLARE_ACCOUNT_ID，或给 Token 增加 User·Memberships·Read"
-              elif printf '%s' "$CREATE_OUT" | grep -q '/d1/database'; then
-                echo "::error::Token 缺少 Account·D1·Edit 权限"
-              else
-                echo "::error::d1 create 失败（见上方脱敏输出）"
-              fi
+            if ! curl -sf -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                 -H "Content-Type: application/json" -d '{"name":"leantrace"}' \
+                 "$API" >/dev/null; then
+              echo "::error::创建 D1 数据库失败（检查 Account·D1·Edit 权限）"
               exit 1
             fi
-            DB_ID=$(db_info)
+            DB_ID=$(list_db)
           fi
           if [ -z "$DB_ID" ]; then
-            echo "::error::无法获得 database_id"
+            echo "创建后仍未查询到 database_id，当前库列表（已脱敏）："
+            curl -sf -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$API?per_page=100" | redact
             exit 1
           fi
           sed -i "s|<unique-ID-for-your-database>|$DB_ID|g" wrangler.toml
